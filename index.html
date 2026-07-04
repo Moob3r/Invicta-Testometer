@@ -156,7 +156,30 @@
 <script>
 // ── DATA ──────────────────────────────────────────────────────────────────────
 const ADMIN_PASSWORD = "ClassisInvicta2026";
-const STORAGE_KEY = "invicta-testometer-v1";
+const BIN_ID = "6a49668eda38895dfe2e91db";
+const API_KEY = "$2a$10$YHcneh1IRo5hvS.CDWiNLuNwGGNPXVH8X8yPU7OaeACxbI5grYk7m";
+const BIN_URL = `https://api.jsonbin.io/v3/b/${BIN_ID}`;
+
+async function loadFromCloud(){
+  try {
+    const res = await fetch(BIN_URL+"/latest", {
+      headers:{"X-Master-Key": API_KEY, "X-Bin-Meta": "false"}
+    });
+    const data = await res.json();
+    if(data && data.tests && data.tests.length > 0) return data.tests;
+  } catch(e){}
+  return null;
+}
+
+async function saveToCloud(tests){
+  try {
+    await fetch(BIN_URL, {
+      method:"PUT",
+      headers:{"Content-Type":"application/json","X-Master-Key": API_KEY},
+      body: JSON.stringify({tests})
+    });
+  } catch(e){ console.error("Cloud save failed", e); }
+}
 
 const REAL_TESTS = [
   {id:1, course:"VMSR 402", title:"Principles of Surgery",         date:"2026-07-03", time:"", venue:"", type:"Test"},
@@ -228,7 +251,7 @@ function dotColor(type){
 
 // ── STATE ─────────────────────────────────────────────────────────────────────
 let state = {
-  tests: JSON.parse(localStorage.getItem(STORAGE_KEY) || "null") || REAL_TESTS,
+  tests: REAL_TESTS,
   view: "timeline",
   filter: "All",
   calYear: new Date().getFullYear(),
@@ -243,7 +266,7 @@ let state = {
 };
 
 function save(){
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.tests));
+  saveToCloud(state.tests);
 }
 
 // ── RENDER ────────────────────────────────────────────────────────────────────
@@ -271,7 +294,11 @@ function render(){
   const tl = el("div","topbar-left");
   tl.innerHTML = `<div class="topbar-eyebrow">Classis Invicta · 400 Level · FVM ABU Zaria</div><div class="topbar-title">The Testometer</div>`;
   const adminBtn = el("button","admin-btn"); adminBtn.textContent = "⚙ Admin";
-  adminBtn.onclick = () => { state.adminOpen = true; render(); };
+  adminBtn.onclick = () => { state.adminOpen = true; (async () => {
+  const cloud = await loadFromCloud();
+  if(cloud) state.tests = cloud;
+  render();
+})(); };
   topbar.appendChild(tl); topbar.appendChild(adminBtn);
   app.appendChild(topbar);
 
@@ -355,269 +382,4 @@ function render(){
       // Date col
       const dc = el("div","date-col");
       const isToday = t.date === todayStr;
-      dc.innerHTML = `<div class="date-day${isToday?" today":""}">${dateObj.getDate()}</div><div class="date-dow">${DAYS_SHORT[dateObj.getDay()]}</div>`;
-      row.appendChild(dc);
-
-      // Line
-      const line = el("div","timeline-line"+(d.past?" past":"")+(holiday?" holiday":""));
-      row.appendChild(line);
-
-      // Card
-      const card = el("div",`card card-left-border-${typeClass(t.type)}`);
-      const top = el("div","card-top");
-      const info = el("div","");
-      info.innerHTML = `<div class="card-course">${t.course}${inBreak?" · <span style='color:#C0392B;font-size:9px'>MID-SEMESTER BREAK PERIOD</span>":""}</div><div class="card-title">${t.title}</div>`;
-      const badges = el("div","card-badges");
-      badges.innerHTML = `<span class="badge badge-${typeClass(t.type)}">${t.type}</span>`;
-      if(holiday) badges.innerHTML += `<span class="badge" style="background:#f0f0f0;color:#666">🏛 ${holiday.name}</span>`;
-      if(d.past) badges.innerHTML += `<span class="badge badge-done">Done</span>`;
-      else if(d.urgent) badges.innerHTML += `<span class="badge-soon">${d.label}</span>`;
-      else badges.innerHTML += `<span class="badge-away">${d.label}</span>`;
-      top.appendChild(info); top.appendChild(badges);
-      card.appendChild(top);
-      if(t.time||t.venue){
-        const meta = el("div","card-meta");
-        if(t.time) meta.innerHTML += `<span>🕐 ${t.time}</span>`;
-        if(t.venue) meta.innerHTML += `<span>📍 ${t.venue}</span>`;
-        card.appendChild(meta);
-      }
-      row.appendChild(card);
-      main.appendChild(row);
-    });
-
-    if(filtered.length === 0){
-      const empty = el("div","");
-      empty.style.cssText = "text-align:center;color:#aaa;padding:60px;font-style:italic";
-      empty.textContent = "No tests match this filter.";
-      main.appendChild(empty);
-    }
-  }
-
-  if(state.view === "calendar"){
-    // Nav
-    const nav = el("div","cal-nav");
-    const prevBtn = el("button","cal-nav-btn"); prevBtn.textContent = "‹";
-    prevBtn.onclick = () => {
-      let m = state.calMonth - 1, y = state.calYear;
-      if(m < 0){ m = 11; y--; }
-      state.calMonth = m; state.calYear = y; render();
-    };
-    const nextBtn = el("button","cal-nav-btn"); nextBtn.textContent = "›";
-    nextBtn.onclick = () => {
-      let m = state.calMonth + 1, y = state.calYear;
-      if(m > 11){ m = 0; y++; }
-      state.calMonth = m; state.calYear = y; render();
-    };
-    const title = el("div","cal-month-title");
-    title.textContent = `${MONTHS[state.calMonth]} ${state.calYear}`;
-    nav.appendChild(prevBtn); nav.appendChild(title); nav.appendChild(nextBtn);
-    main.appendChild(nav);
-
-    // Legend
-    const leg = el("div","legend");
-    [{c:"#1B2A4A",l:"Test"},{c:"#C9A84C",l:"Practical"},{c:"#2E8B2E",l:"Quiz"},{c:"#C0392B",l:"Exam"},{c:"#ccc",l:"Holiday"},{c:"#f0c060",l:"Break"}].forEach(({c,l})=>{
-      const li = el("div","legend-item");
-      li.innerHTML = `<span class="legend-dot" style="background:${c}"></span><span>${l}</span>`;
-      leg.appendChild(li);
-    });
-    main.appendChild(leg);
-
-    // Day headers
-    const gh = el("div","cal-grid-header");
-    DAYS_SHORT.forEach(d => { const dh = el("div","cal-dow"); dh.textContent = d; gh.appendChild(dh); });
-    main.appendChild(gh);
-
-    // Cells
-    const firstDay = new Date(state.calYear, state.calMonth, 1).getDay();
-    const totalDays = new Date(state.calYear, state.calMonth+1, 0).getDate();
-    const grid = el("div","cal-grid");
-
-    for(let i = 0; i < firstDay; i++){
-      grid.appendChild(el("div","cal-cell empty"));
-    }
-    for(let d = 1; d <= totalDays; d++){
-      const ds = isoDate(state.calYear, state.calMonth, d);
-      const holiday = getHolidayForDate(ds);
-      const block = getBlockForDate(ds);
-      const isBreak = block && block.type === "break";
-      const isExams = block && block.type === "exams";
-      const isToday = ds === todayStr;
-      const dayTests = state.tests.filter(t => t.date === ds);
-
-      let cellClass = "cal-cell";
-      if(isBreak) cellClass += " break-day";
-      if(holiday) cellClass += " holiday-day";
-      if(isToday) cellClass += " today";
-
-      const cell = el("div", cellClass);
-      const dateNum = el("div","cal-date"+(isToday?" today-num":""));
-      dateNum.textContent = d;
-      cell.appendChild(dateNum);
-
-      if(isBreak && d === new Date(ACADEMIC_BLOCKS[1].from+"T00:00:00").getDate() && state.calMonth === 6){
-        const chip = el("div","cal-chip cal-chip-break");
-        chip.textContent = "Mid-Sem Break";
-        cell.appendChild(chip);
-      }
-      if(holiday){
-        const chip = el("div","cal-chip cal-chip-holiday");
-        chip.title = holiday.name;
-        chip.textContent = holiday.name;
-        cell.appendChild(chip);
-      }
-      dayTests.forEach(t => {
-        const chip = el("div",`cal-chip cal-chip-${typeClass(t.type)}`);
-        chip.title = `${t.course} — ${t.title}${t.time?" | "+t.time:""}${t.venue?" | "+t.venue:""}`;
-        chip.textContent = t.course;
-        cell.appendChild(chip);
-      });
-
-      grid.appendChild(cell);
-    }
-    main.appendChild(grid);
-
-    // Academic calendar key
-    const key = el("div","");
-    key.style.cssText = "margin-top:16px;font-size:11px;color:#888;font-style:italic;line-height:1.8";
-    key.innerHTML = `
-      <strong style="color:var(--navy);font-style:normal">Academic Calendar (2nd Semester):</strong><br>
-      Lectures: 1 Jun – 25 Jul 2026 &nbsp;·&nbsp; Mid-Semester Break: 27 Jul – 1 Aug 2026<br>
-      Lectures Resume: 3 Aug – 12 Sep 2026 &nbsp;·&nbsp; Final Examinations: 14 Sep – 3 Oct 2026
-    `;
-    main.appendChild(key);
-  }
-
-  app.appendChild(main);
-
-  // ── ADMIN MODAL
-  if(state.adminOpen){
-    const overlay = el("div","modal-overlay");
-    overlay.onclick = e => { if(e.target===overlay){ state.adminOpen=false; state.authed=false; state.pwInput=""; render(); }};
-    const modal = el("div","modal");
-
-    // Header
-    const mh = el("div","modal-header");
-    const mht = el("div","modal-header-text");
-    mht.innerHTML = `<div class="eyebrow">Academic Committee · Admin</div><div class="title">Testometer Admin Panel</div>`;
-    const mc = el("button","modal-close"); mc.textContent = "✕";
-    mc.onclick = () => { state.adminOpen=false; state.authed=false; state.pwInput=""; render(); };
-    mh.appendChild(mht); mh.appendChild(mc);
-    modal.appendChild(mh);
-
-    const mb = el("div","modal-body");
-
-    if(!state.authed){
-      // Lock screen
-      const ls = el("div","lock-screen");
-      ls.innerHTML = `<div class="lock-icon">🔒</div><div class="lock-title">Committee Access Only</div><div class="lock-sub">Enter the admin password to manage the testometer.</div>`;
-      const pw = el("input","pw-input"+(state.pwError?" error":""));
-      pw.type = "password"; pw.placeholder = "Password"; pw.value = state.pwInput;
-      pw.oninput = e => { state.pwInput = e.target.value; };
-      pw.onkeydown = e => { if(e.key==="Enter") tryAuth(); };
-      if(state.pwError){ const err = el("div","pw-error"); err.textContent = "Incorrect password. Try again."; ls.appendChild(pw); ls.appendChild(err); }
-      else ls.appendChild(pw);
-      const ub = el("button","unlock-btn"); ub.textContent = "Unlock";
-      ub.onclick = tryAuth;
-      ls.appendChild(ub);
-      mb.appendChild(ls);
-    } else {
-      // Admin panel
-      if(state.saved){ const sb = el("div","success-bar"); sb.textContent = "✓ Saved successfully"; mb.appendChild(sb); }
-
-      // Form
-      const fb = el("div","form-box");
-      const ft = el("div","form-title"); ft.textContent = state.editId ? "✏ Edit Test" : "＋ Add New Test";
-      fb.appendChild(ft);
-      const fg = el("div","form-grid");
-      [["course","Course Code","e.g. VMPA 402",false],["title","Test Title","e.g. Virology",true],["date","Date","",false],["time","Time (optional)","",false],["venue","Venue (optional)","e.g. LT1",false]].forEach(([k,lbl,ph,full])=>{
-        const ff = el("div","form-field"+(full?" full":""));
-        const fl = el("label","form-label"); fl.textContent = lbl;
-        const fi2 = el("input","form-input");
-        fi2.type = k==="date"?"date":k==="time"?"time":"text";
-        fi2.placeholder = ph; fi2.value = state.form[k]||"";
-        fi2.oninput = e => { state.form[k] = e.target.value; };
-        ff.appendChild(fl); ff.appendChild(fi2); fg.appendChild(ff);
-      });
-      // Type select
-      const tf = el("div","form-field");
-      const tl2 = el("label","form-label"); tl2.textContent = "Type";
-      const ts = el("select","form-input");
-      ["Test","Practical","Quiz","Exam"].forEach(t => {
-        const o = document.createElement("option"); o.value = t; o.textContent = t;
-        if(state.form.type === t) o.selected = true;
-        ts.appendChild(o);
-      });
-      ts.onchange = e => { state.form.type = e.target.value; };
-      tf.appendChild(tl2); tf.appendChild(ts); fg.appendChild(tf);
-      fb.appendChild(fg);
-
-      const fa = el("div","form-actions");
-      const svb = el("button","save-btn"); svb.textContent = state.editId ? "Update" : "Add Test";
-      svb.onclick = handleSave;
-      fa.appendChild(svb);
-      if(state.editId){
-        const cb = el("button","cancel-btn"); cb.textContent = "Cancel";
-        cb.onclick = () => { state.editId=null; state.form={course:"",title:"",date:"",time:"",venue:"",type:"Test"}; render(); };
-        fa.appendChild(cb);
-      }
-      fb.appendChild(fa);
-      mb.appendChild(fb);
-
-      // List
-      const listTitle = el("div","list-title");
-      listTitle.textContent = `All Tests (${state.tests.length})`;
-      mb.appendChild(listTitle);
-      [...state.tests].sort((a,b)=>a.date.localeCompare(b.date)).forEach(t => {
-        const li = el("div","list-item"+(state.editId===t.id?" editing":""));
-        const dot = el("span","list-dot"); dot.style.background = dotColor(t.type);
-        const info = el("div","list-info");
-        info.innerHTML = `<div class="list-course">${t.course} — ${t.title}</div><div class="list-meta">${formatDate(t.date)}${t.time?" · "+t.time:""}${t.venue?" · "+t.venue:""}</div>`;
-        const badge = el("span","list-badge badge-"+typeClass(t.type)); badge.textContent = t.type;
-        badge.style.cssText = `background:${t.type==="Test"?"#E8EEF7":t.type==="Practical"?"#FEF3E2":t.type==="Quiz"?"#EBF5EB":"#F7E8E8"};color:${dotColor(t.type)}`;
-        const eb = el("button","edit-btn"); eb.textContent = "Edit";
-        eb.onclick = () => { state.editId=t.id; state.form={course:t.course,title:t.title,date:t.date,time:t.time,venue:t.venue,type:t.type}; render(); };
-        const db = el("button","del-btn"); db.textContent = "Delete";
-        db.onclick = () => { if(confirm("Delete this test?")){ state.tests=state.tests.filter(x=>x.id!==t.id); save(); render(); }};
-        li.appendChild(dot); li.appendChild(info); li.appendChild(badge); li.appendChild(eb); li.appendChild(db);
-        mb.appendChild(li);
-      });
-    }
-
-    modal.appendChild(mb);
-    overlay.appendChild(modal);
-    app.appendChild(overlay);
-  }
-}
-
-function tryAuth(){
-  if(state.pwInput === ADMIN_PASSWORD){ state.authed=true; state.pwError=false; }
-  else { state.pwError=true; }
-  render();
-}
-
-function handleSave(){
-  if(!state.form.course||!state.form.title||!state.form.date) return;
-  if(state.editId!==null){
-    state.tests = state.tests.map(t => t.id===state.editId ? {...state.form, id:state.editId} : t);
-    state.editId = null;
-  } else {
-    state.tests = [...state.tests, {...state.form, id:Date.now()}];
-  }
-  state.tests.sort((a,b)=>a.date.localeCompare(b.date));
-  state.form = {course:"",title:"",date:"",time:"",venue:"",type:"Test"};
-  save();
-  state.saved = true;
-  render();
-  setTimeout(()=>{ state.saved=false; render(); }, 2500);
-}
-
-function el(tag, cls){
-  const e = document.createElement(tag);
-  if(cls) e.className = cls;
-  return e;
-}
-
-render();
-</script>
-</body>
-</html>
+      dc.innerHTML = `<div class="date-day$
